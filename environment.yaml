@@ -1,0 +1,11 @@
+name: annotation_app
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12.5 
+  - numpy
+  - pandas
+  - matplotlib
+  - pygame
+  - scipy
