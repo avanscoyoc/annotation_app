@@ -1,6 +1,6 @@
 # app.py
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, ttk, filedialog
 from scipy.io import wavfile
 import pygame
 import pandas as pd
@@ -9,7 +9,8 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from datetime import datetime
 import os
-from data import create_data  # Import data handling function
+import librosa
+from PIL import Image, ImageTk
 
 class AnnotationApp:
     def __init__(self, master):
@@ -17,9 +18,10 @@ class AnnotationApp:
         self.master.title("Training App")
         self.master.geometry("600x800")
 
+        self.file_paths = []
+        self.current_index = -1
+
         # Initialize data and sound
-        self.data = create_data('data')
-        self.current_question = 0
         self.responses = []
         self.current_position = 0  # Current position in audio playback
         self.canvas = None  # To hold the spectrogram canvas
@@ -36,7 +38,7 @@ class AnnotationApp:
         self.slider = tk.Scale(self.master, from_=0, to=10, orient=tk.HORIZONTAL, length=300, showvalue=1, resolution=0.25)
         self.slider.grid(row=2, columnspan=5, pady=10)
 
-        self.play_button = ttk.Button(self.master, text="Play Sound", command=self.play)
+        self.play_button = ttk.Button(self.master, text="Play Sound", command=self.play, state="disabled")
         self.play_button.grid(row=3, column=3, pady=10)
 
         self.selected_answer = tk.StringVar()
@@ -60,16 +62,27 @@ class AnnotationApp:
         self.question_number_label = ttk.Label(self.master, text="", font=("Arial", 12))
         self.question_number_label.grid(row=8, column=3)
 
-        self.show_question()
+        self.select_files_button = ttk.Button(self.master, text="Select Files", command = self.select_files)
+        self.select_files_button.grid(row=8, column=4, padx=5, pady=10)
+
+        # self.show_question()
 
         # Bind hotkeys
         self.set_hotkeys()  
 
+    def select_files(self):
+        file_names = filedialog.askopenfilenames(
+            title = 'Select Files', filetypes=[('Audio Files', '*.wav')]
+        )
+        self.file_paths = file_names
+        self.current_index = 0
+        self.show_spectrogram(self.file_paths[0])
+        self.play_button.config(state="normal")
+
     def play(self):
         """Play the current audio file."""
-        self.record_response() #
-        question = self.data[self.current_question]
-        audio = question["sound"]
+        self.record_response()
+        audio = self.file_paths[self.current_index]
         pygame.mixer.music.load(audio)
         pygame.mixer.music.play(loops=0)
 
@@ -85,45 +98,27 @@ class AnnotationApp:
 
     def show_spectrogram(self, audio_file):
         """Display the spectrogram of the current audio file."""
-        self.close_spectrogram()  # Close any existing spectrogram
 
-        # Read the audio file using scipy
-        sample_rate, data_wav = wavfile.read(audio_file)
+        y, sr = librosa.load(audio_file)
+    
+        s = librosa.feature.melspectrogram(y=y, sr=sr)
+        s_db = librosa.power_to_db(s, ref=np.max)
 
-        # Create the figure and plot
-        fig, ax = plt.subplots(figsize=(4, 2)) # Smaller figure size
-        ax.specgram(data_wav, Fs=sample_rate, NFFT=1024, noverlap=512, cmap='cividis')
-        ax.set_xlabel('Time (s)', fontsize=3)  # X-axis label font size
-        ax.set_ylabel('Frequency (Hz)', fontsize=3)  # Y-axis label font size
-        ax.set_ylim(0, 6000)  # Set frequency limit to max of 5 kHz
+        plt.figure(figsize=(5, 3))
+        librosa.display.specshow(s_db, cmap='gray_r', sr=sr, x_axis='time', y_axis='mel')
+        plt.colorbar(format='%+2.0f dB')
+        plt.title('Mel-frequency spectrogram')
 
-        # Set x-ticks at half-second intervals
-        audio_length = len(data_wav) / sample_rate  # Length in seconds
-        ax.set_xticks(np.arange(0, audio_length + 0.5, 0.5))  # Set x-ticks
+        plt.savefig('spectrogram.png')
+        plt.close()
 
-        # Set number of y-ticks
-        ax.yaxis.set_major_locator(plt.MaxNLocator(5))  # Set max number of Y ticks to 5
+        img = Image.open('spectrogram.png')
+        img = ImageTk.PhotoImage(img)
 
-        # Adjust tick parameters (size of tick labels)
-        ax.tick_params(axis='both', which='major', labelsize=3, length=1)
-        ax.tick_params(axis='both', which='minor', labelsize=3, length=1)
+        label = tk.Label(self.spectrogram_frame, image=img)
+        label.grid(row=3, column=0, pady=10)
 
-        # Adjust subplot parameters
-        plt.subplots_adjust(top=0.98, right=0.99, bottom=0.23, left=0.17)
-
-        # Embed the plot in Tkinter
-        self.canvas = FigureCanvasTkAgg(fig, master=self.spectrogram_frame)
-        canvas_widget = self.canvas.get_tk_widget()
-        canvas_widget.grid(row=3, column=0, pady=10)
-
-        # Set the canvas widget size
-        canvas_widget.config(width=600, height=400)
-
-    def close_spectrogram(self):
-        """Close the currently displayed spectrogram."""
-        if self.canvas is not None:
-            self.canvas.get_tk_widget().destroy()
-            self.canvas = None
+        label.image = img
 
     def update_slider(self):
         """Update the slider based on the current position in audio playback."""
@@ -135,21 +130,19 @@ class AnnotationApp:
 
     def show_question(self):
         """Display the current question and its associated audio."""
-        question = self.data[self.current_question]
-        self.qs_label.config(text=question["question"])
+        question = self.file_paths[self.current_index]
 
         # Show the spectrogram for the current audio
-        audio = question["sound"]
-        self.show_spectrogram(audio)
+        self.show_spectrogram(question)
 
         # Reset the slider position
         self.slider.set(0)
         
         # Load previous answer and notes if they exist
-        if self.current_question < len(self.responses):
-            self.selected_answer.set(self.responses[self.current_question].get('user_answer', ''))
+        if self.current_index < len(self.responses):
+            self.selected_answer.set(self.responses[self.current_index].get('user_answer', ''))
             self.notes_entry.delete(1.0, tk.END)  # Clear the text box
-            self.notes_entry.insert(tk.END, self.responses[self.current_question].get('notes', ''))  # Load previous notes
+            self.notes_entry.insert(tk.END, self.responses[self.current_index].get('notes', ''))  # Load previous notes
         else:
             self.selected_answer.set("")  # Reset answer
             self.notes_entry.delete(1.0, tk.END)  # Clear notes box
@@ -161,10 +154,10 @@ class AnnotationApp:
             self.next_btn.config(state="disabled")
 
         # Update the question number label
-        self.question_number_label.config(text=f"Sound file {self.current_question + 1} / {len(self.data)}")
+        self.question_number_label.config(text=f"Sound file {self.current_index + 1} / {len(self.file_paths)}")
 
         # Change the button text based on whether it’s the last question
-        if self.current_question == len(self.data) - 1:
+        if self.current_index == len(self.file_paths) - 1:
             self.next_btn.config(text="Submit")
         else:
             self.next_btn.config(text="Next")
@@ -179,12 +172,17 @@ class AnnotationApp:
         notes = self.notes_entry.get(1.0, tk.END).strip()
 
         # Store the response with sound file path and user's answer
-        if self.current_question < len(self.responses):
-            self.responses[self.current_question]['user_answer'] = selected_choice  # Update existing response
-            self.responses[self.current_question]['notes'] = notes  # Update existing notes
+        if self.current_index < len(self.responses):
+            self.responses[self.current_index]['user_answer'] = selected_choice  # Update existing response
+            self.responses[self.current_index]['notes'] = notes  # Update existing notes
         else:
+            parts = self.file_paths[self.current_index].split("t-", 1)
+
+            if len(parts) > 1:
+                file_name = "t-" + parts[1]
+
             self.responses.append({
-                "sound": self.data[self.current_question]["sound"],  # File path of the audio
+                "sound": file_name,  # File path of the audio
                 "user_answer": selected_choice,  # User's selected answer
                 "notes": notes  # Notes entered by the user
             })
@@ -199,8 +197,8 @@ class AnnotationApp:
         self.record_response()
         pygame.mixer.music.stop()
 
-        if self.current_question < len(self.data) - 1:
-            self.current_question += 1
+        if self.current_index < len(self.file_paths) - 1:
+            self.current_index += 1
             self.show_question()
         else:
             self.submit_answers()
@@ -219,10 +217,10 @@ class AnnotationApp:
 
     def previous_question(self):
         """Move to the previous question."""
-        self.record_response() #
+        self.record_response()
         pygame.mixer.music.stop()  # Stop the audio when going back
-        if self.current_question > 0:
-            self.current_question -= 1
+        if self.current_index > 0:
+            self.current_index -= 1
             self.show_question()
 
     def submit_answers(self):
