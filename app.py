@@ -235,8 +235,10 @@ class AnnotationApp:
         
         # Proceed with submission if all responses are complete
         date_submitted = datetime.now().strftime("%Y%m%d")
-        filename = f"responses_{date_submitted}.csv"
-        filepath = os.path.join('results', filename)
+        save_name = self.responses[0]['sound']
+        print(save_name)
+        filename = f"responses_{save_name}.csv"
+        filepath = os.path.join('results/', filename)
         
         df = pd.DataFrame(self.responses)
         df.to_csv(filepath, index=False)
