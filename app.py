@@ -171,15 +171,12 @@ class AnnotationApp:
         selected_choice = self.selected_answer.get()
         notes = self.notes_entry.get(1.0, tk.END).strip()
 
-        # Store the response with sound file path and user's answer
         if self.current_index < len(self.responses):
             self.responses[self.current_index]['user_answer'] = selected_choice  # Update existing response
             self.responses[self.current_index]['notes'] = notes  # Update existing notes
+            
         else:
-            parts = self.file_paths[self.current_index].split("t-", 1)
-
-            if len(parts) > 1:
-                file_name = "t-" + parts[1]
+            file_name = os.path.basename(self.file_paths[self.current_index])
 
             self.responses.append({
                 "sound": file_name,  # File path of the audio
@@ -234,9 +231,7 @@ class AnnotationApp:
             return  # Don't submit if there are incomplete answers
         
         # Proceed with submission if all responses are complete
-        date_submitted = datetime.now().strftime("%Y%m%d")
         save_name = self.responses[0]['sound']
-        print(save_name)
         filename = f"responses_{save_name}.csv"
         filepath = os.path.join('results/', filename)
         
